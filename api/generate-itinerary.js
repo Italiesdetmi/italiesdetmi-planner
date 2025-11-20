@@ -1,4 +1,4 @@
-// api/generate-itinerary.js  (Vercel serverless function)
+// api/generate-itinerary.js - clean version
 import OpenAI from "openai";
 
 const client = new OpenAI({
@@ -7,19 +7,32 @@ const client = new OpenAI({
 
 function buildPrompt({ dest, days, ages, pace, prefs }) {
   return `
-You are an expert family travel planner for Italy. Produce a friendly, clear, practical itinerary for families with children.
-Respond strictly in JSON with keys: title, description, days (array), summary.
-Each day in "days" must be:
+You are an expert family travel planner for Italy.
+Return ONLY valid JSON. No markdown, no code blocks.
+
+Keys:
+- title
+- description
+- days: array of day objects
+- summary
+
+Each day object must be:
 {
   "dayNumber": number,
   "headline": "",
-  "activities": [{"time": "", "activity": "", "details": ""}],
+  "activities": [
+    { "time": "", "activity": "", "details": "" }
+  ],
   "travelInfo": "",
   "childNotes": "",
   "accommodationSuggestion": ""
 }
-Avoid personal info. Use safe driving times. Destination: ${dest}. Days: ${days}. Ages: ${ages}. Pace: ${pace}. Preferences: ${prefs}.
-Return only valid JSON.
+
+Destination: ${dest}
+Days: ${days}
+Ages: ${ages}
+Pace: ${pace}
+Preferences: ${prefs}
 `;
 }
 
@@ -41,28 +54,41 @@ export default async function handler(req, res) {
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: "You are a concise travel planner for families visiting Italy." },
-        { role: "user", content: prompt },
+        { role: "system", content: "You generate JSON only." },
+        { role: "user", content: prompt }
       ],
       temperature: 0.2,
-      max_tokens: 1500,
+      max_tokens: 1800,
     });
 
-    const text = completion.choices[0].message.content;
+    const raw = completion.choices[0].message.content;
 
-    // --- CLEAN THE MARKDOWN FENCES ---
-    let cleaned = text.replace(/```json/i, "");
-    cleaned = cleaned.replace(/```/g, "");
-    cleaned = cleaned.trim();
+    // CLEAN OUTPUT
+    let cleaned = raw
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .trim();
 
-    // --- PARSE ---
+    // PARSE JSON SAFELY
     let parsed;
     try {
       parsed = JSON.parse(cleaned);
-    } catch (err) {
+    } catch (e) {
       const match = cleaned.match(/\{[\s\S]*\}/);
       if (match) {
         parsed = JSON.parse(match[0]);
       } else {
         return res.status(500).json({
-          error: "Unable to parse model output a
+          error: "Model did not return valid JSON",
+          raw: cleaned
+        });
+      }
+    }
+
+    return res.status(200).json({ ok: true, itinerary: parsed });
+
+  } catch (err) {
+    console.error("SERVER ERROR:", err);
+    return res.status(500).json({ error: "Server error" });
+  }
+}
