@@ -50,27 +50,19 @@ export default async function handler(req, res) {
 
     const text = completion.choices[0].message.content;
 
+    // --- CLEAN THE MARKDOWN FENCES ---
+    let cleaned = text.replace(/```json/i, "");
+    cleaned = cleaned.replace(/```/g, "");
+    cleaned = cleaned.trim();
+
+    // --- PARSE ---
     let parsed;
     try {
-      parsed = JSON.parse(text);
+      parsed = JSON.parse(cleaned);
     } catch (err) {
-      // Fallback: try to extract JSON structure
-      const match = text.match(/\{[\s\S]*\}$/);
+      const match = cleaned.match(/\{[\s\S]*\}/);
       if (match) {
         parsed = JSON.parse(match[0]);
       } else {
         return res.status(500).json({
-          error: "Unable to parse model output as JSON.",
-          raw: text,
-        });
-      }
-    }
-
-    res.setHeader("Cache-Control", "no-store");
-    return res.status(200).json({ ok: true, itinerary: parsed });
-
-  } catch (error) {
-    console.error("Error:", error);
-    return res.status(500).json({ error: "Server error" });
-  }
-}
+          error: "Unable to parse model output a
